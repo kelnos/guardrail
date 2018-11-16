@@ -254,7 +254,7 @@ object Http4sClientGenerator {
           )
         }
 
-        Target.getGeneratorSettings.flatMap { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
           for {
             // Placeholder for when more functions get logging
             _ <- Target.pure(())

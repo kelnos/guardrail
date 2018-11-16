@@ -3,6 +3,7 @@ package com.twilio
 import cats.{ Applicative, Id }
 import cats.data.{ EitherK, EitherT, NonEmptyList, ReaderT, WriterT }
 import cats.instances.all._
+//import cats.instances.either._
 import cats.syntax.applicative._
 import cats.syntax.either._
 import com.twilio.guardrail.generators.GeneratorSettings
@@ -25,13 +26,13 @@ package guardrail {
     def error[T](x: String): Target[T] = EitherT.fromEither(Left(x))
     def fromOption[T](x: Option[T], default: => String): Target[T] =
       EitherT.fromOption(x, default)
-    def unsafeExtract[T](x: Target[T], generatorSettings: GeneratorSettings): T =
+    def unsafeExtract[T, L <: LA](x: Target[T], generatorSettings: GeneratorSettings[L]): T =
       x.valueOr({ err =>
           throw new Exception(err.toString)
         })
         .run(generatorSettings)
         .value
-    def getGeneratorSettings: Target[GeneratorSettings] =
+    def getGeneratorSettings[L <: LA]: Target[GeneratorSettings[L]] =
       EitherT.liftF(ReaderT.ask)
 
     object log {
@@ -90,7 +91,7 @@ package object guardrail {
   type CodegenApplication[T] = EitherK[ScalaTerm[ScalaLanguage, ?], Parser, T]
 
   type Logger[T]     = WriterT[Id, StructuredLogger, T]
-  type Settings[T]   = ReaderT[Logger, GeneratorSettings, T]
+  type Settings[T]   = ReaderT[Logger, GeneratorSettings[_ <: LA], T]
   type Target[A]     = EitherT[Settings, String, A]
   type CoreTarget[A] = EitherT[Logger, Error, A]
 }

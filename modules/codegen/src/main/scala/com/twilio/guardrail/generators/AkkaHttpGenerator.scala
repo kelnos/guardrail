@@ -45,7 +45,7 @@ object AkkaHttpGenerator {
         )
 
       case GetFrameworkImplicits() =>
-        Target.getGeneratorSettings.map { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].map { implicit gs =>
           val jsonEncoderTypeclass: Type = t"io.circe.Encoder"
           val jsonDecoderTypeclass: Type = t"io.circe.Decoder"
           q"""
@@ -160,7 +160,7 @@ object AkkaHttpGenerator {
         }
 
       case GetGeneratorSettings() =>
-        Target.getGeneratorSettings
+        Target.getGeneratorSettings[ScalaLanguage]
     }
   }
 }

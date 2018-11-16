@@ -237,7 +237,7 @@ object AkkaHttpServerGenerator {
           )
 
       case BuildTracingFields(operation, resourceName, tracing) =>
-        Target.getGeneratorSettings.flatMap { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
           for {
             _ <- Target.log.debug("AkkaHttpServerGenerator", "server")(s"buildTracingFields(${operation}, ${resourceName}, ${tracing})")
             res <- if (tracing) {

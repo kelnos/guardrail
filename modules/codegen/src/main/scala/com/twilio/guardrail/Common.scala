@@ -9,7 +9,7 @@ import cats.syntax.semigroup._
 import cats.syntax.traverse._
 import cats.~>
 import com.twilio.guardrail.generators.GeneratorSettings
-import com.twilio.guardrail.languages.ScalaLanguage
+import com.twilio.guardrail.languages.LA
 import com.twilio.guardrail.protocol.terms.protocol.PolyProtocolTerms
 import com.twilio.guardrail.terms.framework.FrameworkTerms
 import com.twilio.guardrail.terms.{ CoreTerm, CoreTerms, ScalaTerms, SwaggerTerms }
@@ -227,28 +227,30 @@ object Common {
       ).toList
   }
 
-  def processArgs[F[_]](
+  def processArgs[F[_], L <: LA](
       args: NonEmptyList[Args]
-  )(implicit C: CoreTerms[F]): Free[F, NonEmptyList[(GeneratorSettings, ReadSwagger[Target[List[WriteTree]]])]] = {
+  )(implicit C: CoreTerms[F]): Free[F, NonEmptyList[(GeneratorSettings[L], ReadSwagger[Target[List[WriteTree]]])]] = {
     import C._
     args.traverse(
       arg =>
         for {
           targetInterpreter <- extractGenerator(arg.context)
-          generatorSettings <- extractGeneratorSettings(arg.context)
+          generatorSettings <- extractGeneratorSettings[L](arg.context)
           writeFile         <- processArgSet(targetInterpreter)(arg)
         } yield (generatorSettings, writeFile)
     )
   }
 
-  def runM[F[_]](args: Array[String])(implicit C: CoreTerms[F]): Free[F, NonEmptyList[(GeneratorSettings, ReadSwagger[Target[List[WriteTree]]])]] = {
+  def runM[F[_], L <: LA](
+      args: Array[String]
+  )(implicit C: CoreTerms[F]): Free[F, NonEmptyList[(GeneratorSettings[L], ReadSwagger[Target[List[WriteTree]]])]] = {
     import C._
 
     for {
       defaultFramework <- getDefaultFramework
       parsed           <- parseArgs(args, defaultFramework)
       args             <- validateArgs(parsed)
-      writeTrees       <- processArgs(args)
+      writeTrees       <- processArgs[F, L](args)
     } yield writeTrees
   }
 }

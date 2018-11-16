@@ -71,7 +71,7 @@ object Http4sServerGenerator {
         Http4sHelper.generateResponseDefinitions(operation, protocolElems)
 
       case BuildTracingFields(operation, resourceName, tracing) =>
-        Target.getGeneratorSettings.flatMap { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
           for {
             _ <- Target.log.debug("Http4sServerGenerator", "server")(s"buildTracingFields(${operation}, ${resourceName}, ${tracing})")
             res <- if (tracing) {

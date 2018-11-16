@@ -35,7 +35,7 @@ object CirceProtocolGenerator {
         // Default to `string` for untyped enums.
         // Currently, only plain strings are correctly supported anyway, so no big loss.
         val tpeName = Option(swagger.getType()).getOrElse("string")
-        Target.getGeneratorSettings.map { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].map { implicit gs =>
           Either.right(SwaggerUtil.typeName(tpeName, Option(swagger.getFormat()), ScalaType(swagger)))
         }
 
@@ -105,7 +105,7 @@ object CirceProtocolGenerator {
         def toCamelCase(s: String): String =
           "[_\\.]([a-z])".r.replaceAllIn(s, m => m.group(1).toUpperCase(Locale.US))
 
-        Target.getGeneratorSettings.flatMap { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
           for {
             _ <- Target.log.debug("definitions", "circe", "modelProtocolTerm")(s"Generated ProtocolParameter(${term}, ${name}, ...)")
 
@@ -325,7 +325,7 @@ object CirceProtocolGenerator {
   object ProtocolSupportTermInterp extends (ProtocolSupportTerm[ScalaLanguage, ?] ~> Target) {
     def apply[T](term: ProtocolSupportTerm[ScalaLanguage, T]): Target[T] = term match {
       case ExtractConcreteTypes(definitions) =>
-        Target.getGeneratorSettings.flatMap { implicit gs =>
+        Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
           for {
             entries <- definitions.traverse {
               case (clsName, impl: ModelImpl) if (Option(impl.getProperties()).isDefined || Option(impl.getEnum()).isDefined) =>

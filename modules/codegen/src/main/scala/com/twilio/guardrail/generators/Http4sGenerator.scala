@@ -70,7 +70,7 @@ object Http4sGenerator {
         """)
 
       case GetGeneratorSettings() =>
-        Target.getGeneratorSettings
+        Target.getGeneratorSettings[ScalaLanguage]
     }
   }
 }

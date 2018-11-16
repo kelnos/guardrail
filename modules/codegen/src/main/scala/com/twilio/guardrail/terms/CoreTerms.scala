@@ -6,14 +6,15 @@ import cats.arrow.FunctionK
 import cats.data.NonEmptyList
 import cats.free.Free
 import com.twilio.guardrail.generators.GeneratorSettings
+import com.twilio.guardrail.languages.LA
 
 class CoreTerms[F[_]](implicit I: InjectK[CoreTerm, F]) {
   def getDefaultFramework: Free[F, String] =
     Free.inject[CoreTerm, F](GetDefaultFramework)
   def extractGenerator(context: Context): Free[F, FunctionK[CodegenApplication, Target]] =
     Free.inject[CoreTerm, F](ExtractGenerator(context))
-  def extractGeneratorSettings(context: Context): Free[F, GeneratorSettings] =
-    Free.inject[CoreTerm, F](ExtractGeneratorSettings(context))
+  def extractGeneratorSettings[L <: LA](context: Context): Free[F, GeneratorSettings[L]] =
+    Free.inject[CoreTerm, F](ExtractGeneratorSettings[L](context))
   def parseArgs(args: Array[String], defaultFramework: String): Free[F, List[Args]] =
     Free.inject[CoreTerm, F](ParseArgs(args, defaultFramework))
   def validateArgs(parsed: List[Args]): Free[F, NonEmptyList[Args]] =

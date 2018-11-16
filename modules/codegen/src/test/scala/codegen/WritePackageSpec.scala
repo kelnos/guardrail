@@ -1,16 +1,15 @@
 package codegen
 
-import java.nio.file.{ Path, Paths }
-
+import java.nio.file.{Path, Paths}
 import _root_.io.swagger.models.Swagger
 import _root_.io.swagger.parser.SwaggerParser
 import cats.data.NonEmptyList
 import com.twilio.guardrail._
 import com.twilio.guardrail.core.CoreTermInterp
 import com.twilio.guardrail.terms.CoreTerm
-import org.scalatest.{ FunSuite, Matchers }
+import org.scalatest.{FunSuite, Matchers}
 import com.twilio.guardrail.generators.GeneratorSettings
-
+import com.twilio.guardrail.languages.ScalaLanguage
 import scala.meta._
 
 class WritePackageSpec extends FunSuite with Matchers {
@@ -71,7 +70,7 @@ class WritePackageSpec extends FunSuite with Matchers {
       ),
       List.empty
     )
-    val generatorSettings = new GeneratorSettings(t"BodyPartEntity", t"io.circe.Json")
+    val generatorSettings = new GeneratorSettings[ScalaLanguage](t"BodyPartEntity", t"io.circe.Json")
 
     val result: List[WriteTree] = CoreTarget
       .unsafeExtract(Common.processArgs[CoreTerm](args).foldMap(CoreTermInterp))
@@ -120,7 +119,7 @@ class WritePackageSpec extends FunSuite with Matchers {
       ),
       List.empty
     )
-    val generatorSettings = new GeneratorSettings(t"BodyPartEntity", t"io.circe.Json")
+    val generatorSettings = new GeneratorSettings[ScalaLanguage](t"BodyPartEntity", t"io.circe.Json")
 
     val result: List[WriteTree] = CoreTarget
       .unsafeExtract(Common.processArgs[CoreTerm](args).foldMap(CoreTermInterp))

@@ -117,7 +117,7 @@ object SwaggerUtil {
   }
 
   def modelMetaType[T <: Model](model: T): Target[ResolvedType] =
-    Target.getGeneratorSettings.flatMap { implicit gs =>
+    Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
       model match {
         case ref: RefModel =>
           for {
@@ -173,7 +173,7 @@ object SwaggerUtil {
           }
       )
 
-    Target.getGeneratorSettings.flatMap { implicit gs =>
+    Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
       param match {
         case x: BodyParameter =>
           for {
@@ -220,7 +220,7 @@ object SwaggerUtil {
   }
 
   // Standard type conversions, as documented in http://swagger.io/specification/#data-types-12
-  def typeName(typeName: String, format: Option[String], customType: Option[String])(implicit gs: GeneratorSettings): Type = {
+  def typeName(typeName: String, format: Option[String], customType: Option[String])(implicit gs: GeneratorSettings[ScalaLanguage]): Type = {
     def log(fmt: Option[String], t: Type): Type = {
       fmt.foreach { fmt =>
         println(s"Warning: Deprecated behavior: Unsupported type '$fmt', falling back to $t. Please switch definitions to x-scala-type for custom types")
@@ -266,7 +266,7 @@ object SwaggerUtil {
   }
 
   def propMeta[T <: Property](property: T): Target[ResolvedType] =
-    Target.getGeneratorSettings.flatMap { implicit gs =>
+    Target.getGeneratorSettings[ScalaLanguage].flatMap { implicit gs =>
       property match {
         case p: ArrayProperty =>
           val title = Option(p.getTitle()).getOrElse("Unnamed array")

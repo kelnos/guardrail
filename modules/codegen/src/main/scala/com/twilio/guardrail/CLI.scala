@@ -10,11 +10,11 @@ import com.twilio.guardrail.core.CoreTermInterp
 import com.twilio.guardrail.terms.CoreTerm
 import com.twilio.swagger.core.{ LogLevel, LogLevels }
 import com.twilio.guardrail.generators.GeneratorSettings
-
+import com.twilio.guardrail.languages.LA
 import scala.io.AnsiColor
 
 object CLICommon {
-  def run(args: Array[String])(interpreter: CoreTerm ~> CoreTarget): Unit = {
+  def run[L <: LA](args: Array[String])(interpreter: CoreTerm ~> CoreTarget): Unit = {
     // Hacky loglevel parsing, only supports levels that come before absolutely
     // every other argument due to arguments being a small configuration
     // language themselves.
@@ -22,11 +22,11 @@ object CLICommon {
       args.span(arg => LogLevels(arg.stripPrefix("--")).isDefined)
     val level: Option[String] = levels.lastOption.map(_.stripPrefix("--"))
 
-    val fallback = List.empty[(GeneratorSettings, ReadSwagger[Target[List[WriteTree]]])]
+    val fallback = List.empty[(GeneratorSettings[L], ReadSwagger[Target[List[WriteTree]]])]
     val result = Common
-      .runM[CoreTerm](newArgs)
+      .runM[CoreTerm, L](newArgs)
       .foldMap(interpreter)
-      .fold[List[(GeneratorSettings, ReadSwagger[Target[List[WriteTree]]])]](
+      .fold[List[(GeneratorSettings[L], ReadSwagger[Target[List[WriteTree]]])]](
         {
           case MissingArg(args, Error.ArgName(arg)) =>
             println(s"${AnsiColor.RED}Missing argument:${AnsiColor.RESET} ${AnsiColor.BOLD}${arg}${AnsiColor.RESET} (In block ${args})")
