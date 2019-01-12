@@ -353,9 +353,7 @@ object AkkaHttpClientGenerator {
           StaticDefns[ScalaLanguage](
             className = clientName,
             extraImports = List.empty,
-            members = List.empty,
-            definitions = decls,
-            values = List.empty
+            definitions = decls
           )
         )
 
