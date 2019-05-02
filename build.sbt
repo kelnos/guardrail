@@ -50,6 +50,7 @@ val exampleCases: List[(java.io.File, String, Boolean, List[String])] = List(
   (sampleResource("plain.json"), "tests.dtos", false, List.empty),
   (sampleResource("polymorphism.yaml"), "polymorphism", false, List.empty),
   (sampleResource("raw-response.yaml"), "raw", false, List.empty),
+  (sampleResource("security.yaml"), "security", false, List.empty),
   (sampleResource("server1.yaml"), "tracer", true, List.empty),
   (sampleResource("server2.yaml"), "tracer", true, List.empty),
   (sampleResource("pathological-parameters.yaml"), "pathological", false, List.empty)
@@ -293,6 +294,7 @@ lazy val dropwizardSample = (project in file("modules/sample-dropwizard"))
     libraryDependencies ++= Seq(
       "io.dropwizard"              %  "dropwizard-core"        % dropwizardVersion,
       "io.dropwizard"              %  "dropwizard-forms"       % dropwizardVersion,
+      "io.dropwizard"              %  "dropwizard-auth"        % dropwizardVersion,
       "org.asynchttpclient"        %  "async-http-client"      % ahcVersion,
       "org.scala-lang.modules"     %% "scala-java8-compat"     % "0.9.0"            % Test,
       "org.scalatest"              %% "scalatest"              % scalatestVersion   % Test,
