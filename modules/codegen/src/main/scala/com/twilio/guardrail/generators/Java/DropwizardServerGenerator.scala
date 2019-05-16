@@ -48,6 +48,7 @@ object DropwizardServerGenerator {
   private val LOGGER_TYPE           = JavaParser.parseClassOrInterfaceType("Logger")
 
   private val PRINCIPAL_TYPE = JavaParser.parseClassOrInterfaceType("Principal")
+  private val GUARDRAIL_AUTH_PRINCIPAL_TYPE = JavaParser.parseClassOrInterfaceType("GuardrailAuthPrincipal")
 
   private val GENERIC_A_TYPE                 = JavaParser.parseClassOrInterfaceType("A")
   private def apiKeyAuthFilterType(of: Type) = JavaParser.parseClassOrInterfaceType("ApiKeyAuthFilter").setTypeArguments(of)
@@ -136,21 +137,73 @@ object DropwizardServerGenerator {
       )
   }
 
-  case class SecurityParameters(methodSuffix: String, routeParameters: List[Parameter], routeStatements: List[Statement], principals: List[(Type, String)])
+  case class SecurityParameter(routeParameters: List[Parameter],
+                               routeStatements: List[Statement],
+                               principalClass: Option[ClassOrInterfaceDeclaration])
+  object SecurityParameter {
+    val empty: SecurityParameter = SecurityParameter(List.empty, List.empty, Option.empty)
+  }
 
-  type UnknownHttpSecuritySchemeHandler = (Operation, String, HttpSecurityScheme, List[String]) => Target[SecurityParameters]
+  case class SecurityParameters(methodSuffix: String,
+                                routeParameters: List[Parameter],
+                                routeStatements: List[Statement],
+                                principals: List[(Type, String)])
+
+  type UnknownHttpSecuritySchemeHandler = (Operation, String, HttpSecurityScheme, List[String]) => Target[SecurityParameter]
 
   def emptyUnknownHttpSecuritySchemeHandler(operation: Operation,
                                             schemeName: String,
                                             securityScheme: HttpSecurityScheme,
-                                            scopes: List[String]): Target[SecurityParameters] =
+                                            scopes: List[String]): Target[SecurityParameter] =
     Target.raiseError(s"HTTP auth scheme ${securityScheme.authScheme} is not yet supported")
 
   def generateSecurityParams(operation: Operation,
                              securitySchemes: Map[String, SecurityScheme],
-                             unknownHttpSecuritySchemeHandler: UnknownHttpSecuritySchemeHandler): Target[List[SecurityParameters]] = {
+                             unknownHttpSecuritySchemeHandler: UnknownHttpSecuritySchemeHandler): Target[Option[SecurityParameter]] = {
     val optionalRequirements = SecurityOptional(operation)
     val security             = Option(operation.getSecurity).toList.flatMap(_.asScala)
+
+    lazy val principalClass = new ClassOrInterfaceDeclaration(util.EnumSet.of(PUBLIC, STATIC), false, s"${operation.getOperationId.toPascalCase}AuthPrincipal")
+      .setExtendedTypes(new NodeList(GUARDRAIL_AUTH_PRINCIPAL_TYPE))
+
+    security.distinct
+
+    NonEmptyList
+      .fromList(security)
+      .fold(Target.pure(Option.empty[SecurityParameter]))(requirements =>
+        requirements.foldLeft(Target.pure(SecurityParameter.empty))((parameter, requirement) =>
+          parameter.flatMap({ parameter =>
+            requirement.asScala.toList.traverse({
+              case (schemeName, scopes) =>
+                securitySchemes
+                  .get(schemeName)
+                  .fold(
+                    Target.raiseError[SecurityParameter](s"Operation '${operation.getOperationId} references undefined security scheme $schemeName")
+                  )({ scheme =>
+                    def createParameter(s: String): Target[SecurityParameter] = {
+
+                    }
+
+                    scheme match {
+                      case ApiKeySecurityScheme(_, SwSecurityScheme.In.QUERY, _, _)  => createParameter("ApiKeyQuery")
+                      case ApiKeySecurityScheme(_, SwSecurityScheme.In.HEADER, _, _) => createParameter("ApiKeyHeader")
+                      case ApiKeySecurityScheme(_, SwSecurityScheme.In.COOKIE, _, _) => createParameter("ApiKeyCookie")
+                      case HttpSecurityScheme("basic", _, _)                         => createParameter("HttpBasic")
+                      case HttpSecurityScheme("bearer", _, _)                        => createParameter("HttpBearer")
+                      case httpScheme: HttpSecurityScheme                            => unknownHttpSecuritySchemeHandler(operation, schemeName, httpScheme, scopes.asScala.toList)
+                      case _: OAuth2SecurityScheme                                   => createParameter("OAuth")
+                      case _: OpenIdConnectSecurityScheme                            => createParameter("OpenIdConnect")
+                    }
+                  })
+            }).map(_.foldLeft(SecurityParameter.empty)((accum, next) => SecurityParameter(
+              accum.routeParameters ++ next.routeParameters,
+              accum.routeStatements ++ next.routeStatements,
+              accum.principalClass.orElse(next.principalClass)
+            )))
+          })
+        ).map(Option.apply)
+      )
+
     security
       .traverse({ requirement =>
         requirement.asScala.toList

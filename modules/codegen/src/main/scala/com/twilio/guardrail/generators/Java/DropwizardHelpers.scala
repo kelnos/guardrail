@@ -53,14 +53,6 @@ object DropwizardHelpers {
     """
   )
 
-  def apiKeyQueryAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]]   = authPrincipalSupportDef("ApiKeyQuery")
-  def apiKeyHeaderAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]]  = authPrincipalSupportDef("ApiKeyHeader")
-  def apiKeyCookieAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]]  = authPrincipalSupportDef("ApiKeyCookie")
-  def httpBasicAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]]     = authPrincipalSupportDef("HttpBasic")
-  def httpBearerAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]]    = authPrincipalSupportDef("HttpBearer")
-  def oauthAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]]         = authPrincipalSupportDef("OAuth")
-  def openIdConnectAuthPrincipalSupportDef: Target[SupportDefinition[JavaLanguage]] = authPrincipalSupportDef("OpenIdConnect")
-
   def apiKeyAuthFilterSupportDef: Target[SupportDefinition[JavaLanguage]] = loadSupportDefinitionFromString(
     "ApiKeyAuthFilter",
     """
