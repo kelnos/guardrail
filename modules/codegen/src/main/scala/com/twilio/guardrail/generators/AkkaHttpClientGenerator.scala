@@ -87,12 +87,12 @@ object AkkaHttpClientGenerator {
               case (a, ScalaParameter(_, param, paramName, argName, _)) =>
                 val lifter: (Term.Name, RawParameterName) => Term =
                   param match {
-                    case param"$_: Option[BodyPartEntity]" =>
+                    case param"$_: Option[akka.http.scaladsl.model.BodyPartEntity]" =>
                       liftOptionFileTerm _
-                    case param"$_: Option[BodyPartEntity] = $_" =>
+                    case param"$_: Option[akka.http.scaladsl.model.BodyPartEntity] = $_" =>
                       liftOptionFileTerm _
-                    case param"$_: BodyPartEntity"      => liftFileTerm _
-                    case param"$_: BodyPartEntity = $_" => liftFileTerm _
+                    case param"$_: akka.http.scaladsl.model.BodyPartEntity"      => liftFileTerm _
+                    case param"$_: akka.http.scaladsl.model.BodyPartEntity = $_" => liftFileTerm _
                     case param"$_: Option[$_]"          => liftOptionTerm _
                     case param"$_: Option[$_] = $_"     => liftOptionTerm _
                     case _                              => liftTerm _
