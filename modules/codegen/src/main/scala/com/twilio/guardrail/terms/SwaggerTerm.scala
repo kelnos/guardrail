@@ -79,13 +79,15 @@ case class RouteMeta(path: String, method: HttpMethod, operation: Operation, sec
   // https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.0.md#fixed-fields-8
   // RequestBody can represent either a RequestBody object or $ref.
   // (these are both represented in the same RequestBody class)
-  private def extractRefParamFromRequestBody(requestBody: RequestBody): Option[Parameter] = {
+  private def extractRefParamFromRequestBody[L <: LA](requestBody: RequestBody, protocolElems: List[StrictProtocolElems[L]]): List[Parameter] = {
     val content = for {
       content <- Option(requestBody.getContent)
-      mt      <- content.values().asScala.headOption
+      nameWithMT      <- content.asScala.headOption
+      (name, mt) = nameWithMT
+      ct <- Option(RouteMeta.ContentType.unapply(name))
       ref     <- Option(mt.getSchema.get$ref())
+      refName <- ref.split("/").lastOption
     } yield {
-      val p = new Parameter
 
       val schema = mt.getSchema
 
@@ -94,15 +96,27 @@ case class RouteMeta(path: String, method: HttpMethod, operation: Operation, sec
         schema.setFormat(null)
       }
 
-      p.setIn("body")
-      p.setName("body")
-      p.setSchema(schema)
-      p.set$ref(ref)
-
-      p.setRequired(requestBody.getRequired)
-
-      p.setExtensions(Option(schema.getExtensions).getOrElse(new java.util.HashMap[String, Object]()))
-      p
+      if (ct.contains(RouteMeta.UrlencodedFormData) || ct.contains(RouteMeta.MultipartFormData)) {
+        protocolElems
+          .find(_.name == refName)
+          .flatMap({
+            case ClassDefinition(name, tpe, cls, staticDefns, parents) =>
+            case ADT(name, tpe, trt, staticDefns) =>
+            case _: EnumDefinition => None
+            case _: RandomType => None
+          }).getOrElse(List.empty[Parameter])
+        p.setIn("formData")
+        p.setName("formData")
+      } else {
+        val p = new Parameter
+        p.setIn("body")
+        p.setName("body")
+        p.setSchema(schema)
+        p.set$ref(ref)
+        p.setRequired(requestBody.getRequired)
+        p.setExtensions(Option(schema.getExtensions).getOrElse(new java.util.HashMap[String, Object]()))
+        List(p)
+      }
     }
 
     val ref = Option(requestBody.get$ref()).map { x =>
@@ -154,7 +168,7 @@ case class RouteMeta(path: String, method: HttpMethod, operation: Operation, sec
         }
       }
 
-  private val parameters: List[Parameter] = {
+  private def parameters[L <: LA](protocolElems: List[StrictProtocolElems[L]]): List[Parameter] = {
     val p = Option(operation.getParameters)
       .map(_.asScala.toList)
       .getOrElse(List.empty)
