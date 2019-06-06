@@ -108,11 +108,11 @@ object CirceProtocolGenerator {
           case _ => Target.pure(None)
         }).map(_.map(_.asScala.toList).toList.flatten)
 
-      case TransformProperty(clsName, name, property, meta, needCamelSnakeConversion, concreteTypes, isRequired) =>
+      case TransformProperty(clsName, name, property, meta, concreteTypes, isRequired) =>
         for {
           _ <- Target.log.debug("definitions", "circe", "modelProtocolTerm")(s"Generated ProtocolParameter(${term}, ${name}, ...)")
 
-          argName = if (needCamelSnakeConversion) name.toCamelCase else name
+          argName = name.toCamelCase
 
           defaultValue = property match {
             case _: MapSchema =>
@@ -209,7 +209,7 @@ object CirceProtocolGenerator {
 
         Target.pure(code)
 
-      case EncodeModel(clsName, needCamelSnakeConversion, selfParams, parents) =>
+      case EncodeModel(clsName, selfParams, parents) =>
         val discriminators     = parents.flatMap(_.discriminators)
         val discriminatorNames = discriminators.map(_.propertyName).toSet
         val params = (parents.reverse.flatMap(_.params) ++ selfParams).filterNot(
@@ -264,7 +264,7 @@ object CirceProtocolGenerator {
           }
         """))
 
-      case DecodeModel(clsName, needCamelSnakeConversion, selfParams, parents) =>
+      case DecodeModel(clsName, selfParams, parents) =>
         val discriminators     = parents.flatMap(_.discriminators)
         val discriminatorNames = discriminators.map(_.propertyName).toSet
         val params = (parents.reverse.flatMap(_.params) ++ selfParams).filterNot(

@@ -129,25 +129,6 @@ object ProtocolGenerator {
   }
 
   /**
-    * types of things we can losslessly convert between snake and camel case:
-    *   - foo
-    *   - foo_bar
-    *   - foo_bar_baz
-    *   - foo.bar
-    *
-    * types of things we canNOT losslessly convert between snake and camel case:
-    *   - Foo
-    *   - Foo_bar
-    *   - Foo_Bar
-    *   - FooBar
-    *   - foo_barBaz
-    *
-    * so essentially we have to return false if:
-    *   - there are any uppercase characters
-    */
-  def couldBeSnakeCase(s: String): Boolean = s.toLowerCase(Locale.US) == s
-
-  /**
     * Handle polymorphic model
     */
   private[this] def fromPoly[L <: LA, F[_]](
@@ -178,14 +159,13 @@ object ProtocolGenerator {
         case _                 => Free.pure[F, List[SuperClass[L]]](Nil)
       }
       props <- extractProperties(hierarchy.model)
-      requiredFields           = hierarchy.required ::: hierarchy.children.flatMap(_.required)
-      needCamelSnakeConversion = props.forall { case (k, _) => couldBeSnakeCase(k) }
+      requiredFields = hierarchy.required ::: hierarchy.children.flatMap(_.required)
       params <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
           SwaggerUtil
             .propMeta[L, F](prop)
-            .flatMap(transformProperty(hierarchy.name, needCamelSnakeConversion, concreteTypes)(name, prop, _, isRequired))
+            .flatMap(transformProperty(hierarchy.name, concreteTypes)(name, prop, _, isRequired))
       })
       definition  <- renderSealedTrait(hierarchy.name, params, discriminator, parents, children)
       encoder     <- encodeADT(hierarchy.name, hierarchy.discriminator, children)
@@ -229,14 +209,13 @@ object ProtocolGenerator {
             _extendsProps <- extractProperties(_extends)
             requiredFields = getRequiredFieldsRec(_extends) ++ concreteInterfaces.flatMap(getRequiredFieldsRec)
             _withProps <- concreteInterfaces.traverse(extractProperties)
-            props                    = _extendsProps ++ _withProps.flatten
-            needCamelSnakeConversion = props.forall { case (k, _) => couldBeSnakeCase(k) }
+            props = _extendsProps ++ _withProps.flatten
             params <- props.traverse({
               case (name, prop) =>
                 val isRequired = requiredFields.contains(name)
                 SwaggerUtil
                   .propMeta[L, F](prop)
-                  .flatMap(transformProperty(clsName, needCamelSnakeConversion, concreteTypes)(name, prop, _, isRequired))
+                  .flatMap(transformProperty(clsName, concreteTypes)(name, prop, _, isRequired))
             })
             interfacesCls = interfaces.flatMap(i => Option(i.get$ref).map(_.split("/").last))
             tpe <- parseTypeName(clsName)
@@ -273,17 +252,16 @@ object ProtocolGenerator {
 
     for {
       props <- extractProperties(model)
-      requiredFields           = getRequiredFieldsRec(model)
-      needCamelSnakeConversion = props.forall { case (k, _) => couldBeSnakeCase(k) }
+      requiredFields = getRequiredFieldsRec(model)
       params <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
-          SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, needCamelSnakeConversion, concreteTypes)(name, prop, _, isRequired))
+          SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, concreteTypes)(name, prop, _, isRequired))
       })
       defn <- renderDTOClass(clsName, params, parents)
       deps = params.flatMap(_.dep)
-      encoder     <- encodeModel(clsName, needCamelSnakeConversion, params, parents)
-      decoder     <- decodeModel(clsName, needCamelSnakeConversion, params, parents)
+      encoder     <- encodeModel(clsName, params, parents)
+      decoder     <- decodeModel(clsName, params, parents)
       staticDefns <- renderDTOStaticDefns(clsName, List.empty, encoder, decoder)
       tpe         <- parseTypeName(clsName)
     } yield

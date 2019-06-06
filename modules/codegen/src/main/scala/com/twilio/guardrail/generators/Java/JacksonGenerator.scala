@@ -680,7 +680,7 @@ object JacksonGenerator {
           case _ => Target.pure(None)
         }).map(_.map(_.asScala.toList).toList.flatten)
 
-      case TransformProperty(clsName, name, property, meta, needCamelSnakeConversion, concreteTypes, isRequired) =>
+      case TransformProperty(clsName, name, property, meta, concreteTypes, isRequired) =>
         Target.log.function("transformProperty") {
           for {
             defaultValue <- property match {
@@ -739,7 +739,7 @@ object JacksonGenerator {
             }
             (tpe, classDep) = tpeClassDep
 
-            argName = if (needCamelSnakeConversion) name.toCamelCase else name
+            argName = name.toCamelCase
             _declDefaultPair <- Option(isRequired)
               .filterNot(_ == false)
               .fold[Target[(Type, Option[Expression])]](
@@ -764,10 +764,10 @@ object JacksonGenerator {
       case RenderDTOClass(clsName, selfParams, parents) =>
         renderDTOClass(clsName, selfParams, parents)
 
-      case EncodeModel(clsName, needCamelSnakeConversion, selfParams, parents) =>
+      case EncodeModel(clsName, selfParams, parents) =>
         Target.pure(None)
 
-      case DecodeModel(clsName, needCamelSnakeConversion, selfParams, parents) =>
+      case DecodeModel(clsName, selfParams, parents) =>
         Target.pure(None)
 
       case RenderDTOStaticDefns(clsName, deps, encoder, decoder) =>

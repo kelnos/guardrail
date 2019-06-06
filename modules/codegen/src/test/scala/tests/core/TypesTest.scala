@@ -80,7 +80,7 @@ class TypesTest extends FunSuite with Matchers with SwaggerSpecRunner {
         bool: Option[Boolean] = None,
         string: Option[String] = None,
         date: Option[java.time.LocalDate] = None,
-        date_time: Option[java.time.OffsetDateTime] = None,
+        dateTime: Option[java.time.OffsetDateTime] = None,
         long: Option[Long] = None,
         int: Option[Int] = None,
         float: Option[Float] = None,
@@ -97,7 +97,7 @@ class TypesTest extends FunSuite with Matchers with SwaggerSpecRunner {
       object Types {
         implicit val encodeTypes = {
           val readOnlyKeys = Set[String]()
-          Encoder.forProduct15("array", "obj", "bool", "string", "date", "date_time", "long", "int", "float", "double", "number", "integer", "untyped", "custom", "customComplex")((o: Types) => (o.array, o.obj, o.bool, o.string, o.date, o.date_time, o.long, o.int, o.float, o.double, o.number, o.integer, o.untyped, o.custom, o.customComplex)).mapJsonObject(_.filterKeys(key => !(readOnlyKeys contains key)))
+          Encoder.forProduct15("array", "obj", "bool", "string", "date", "date_time", "long", "int", "float", "double", "number", "integer", "untyped", "custom", "customComplex")((o: Types) => (o.array, o.obj, o.bool, o.string, o.date, o.dateTime, o.long, o.int, o.float, o.double, o.number, o.integer, o.untyped, o.custom, o.customComplex)).mapJsonObject(_.filterKeys(key => !(readOnlyKeys contains key)))
         }
         implicit val decodeTypes = Decoder.forProduct15("array", "obj", "bool", "string", "date", "date_time", "long", "int", "float", "double", "number", "integer", "untyped", "custom", "customComplex")(Types.apply _)
       }
