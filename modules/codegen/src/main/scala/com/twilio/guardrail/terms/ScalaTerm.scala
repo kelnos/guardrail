@@ -24,7 +24,9 @@ case class LiftMapType[L <: LA](value: L#Type)      extends ScalaTerm[L, L#Type]
 
 case class LookupEnumDefaultValue[L <: LA](tpe: L#TypeName, defaultValue: L#Term, values: List[(String, L#TermName, L#TermSelect)])
     extends ScalaTerm[L, L#TermSelect]
-case class FormatEnumName[L <: LA](enumValue: String) extends ScalaTerm[L, String]
+
+case class FormatEnumName[L <: LA](enumValue: String)        extends ScalaTerm[L, String]
+case class FormatVariableName[L <: LA](variableName: String) extends ScalaTerm[L, String]
 
 case class EmbedArray[L <: LA](tpe: LazyResolvedType[L]) extends ScalaTerm[L, LazyResolvedType[L]]
 case class EmbedMap[L <: LA](tpe: LazyResolvedType[L])   extends ScalaTerm[L, LazyResolvedType[L]]

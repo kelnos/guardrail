@@ -50,7 +50,8 @@ object ScalaGenerator {
             Target.raiseError[Term.Select](s"Enumeration ${tpe} somehow has a default value that isn't a string")
         }
       }
-      case FormatEnumName(enumValue) => Target.pure(enumValue.toPascalCase)
+      case FormatEnumName(enumValue)        => Target.pure(enumValue.toPascalCase)
+      case FormatVariableName(variableName) => Target.pure(variableName.toCamelCase)
       case EmbedArray(tpe) =>
         tpe match {
           case SwaggerUtil.Deferred(tpe) =>
