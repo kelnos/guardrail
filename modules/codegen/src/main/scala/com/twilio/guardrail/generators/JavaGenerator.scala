@@ -109,7 +109,9 @@ object JavaGenerator {
       case EmptyOptionalTerm()     => buildMethodCall("java.util.Optional.empty")
       case LiftVectorType(value)   => safeParseClassOrInterfaceType("java.util.List").map(_.setTypeArguments(new NodeList(value)))
       case LiftVectorTerm(value)   => buildMethodCall("java.util.Collections.singletonList", Some(value))
+      case EmptyVectorTerm()       => Target.pure(new ObjectCreationExpr(null, ARRAY_LIST_TYPE_DIAMONDED, new NodeList[Expression]))
       case LiftMapType(value)      => safeParseClassOrInterfaceType("java.util.Map").map(_.setTypeArguments(STRING_TYPE, value))
+      case EmptyMapTerm()          => Target.pure(new ObjectCreationExpr(null, HASH_MAP_TYPE_DIAMONDED, new NodeList[Expression]))
       case LookupEnumDefaultValue(tpe, defaultValue, values) => {
         // FIXME: Is there a better way to do this? There's a gap of coverage here
         defaultValue match {

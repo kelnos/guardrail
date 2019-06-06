@@ -106,6 +106,9 @@ object Java {
   val THROWABLE_TYPE: ClassOrInterfaceType       = JavaParser.parseClassOrInterfaceType("Throwable")
   val ASSERTION_ERROR_TYPE: ClassOrInterfaceType = JavaParser.parseClassOrInterfaceType("AssertionError")
 
+  val HASH_MAP_TYPE_DIAMONDED: ClassOrInterfaceType   = JavaParser.parseClassOrInterfaceType("java.util.HashMap").setTypeArguments(new NodeList[Type])
+  val ARRAY_LIST_TYPE_DIAMONDED: ClassOrInterfaceType = JavaParser.parseClassOrInterfaceType("java.util.ArrayList").setTypeArguments(new NodeList[Type])
+
   private def nameFromExpr(expr: Expression): String = expr match {
     case _: ThisExpr                  => "this"
     case ce: ClassExpr                => s"${ce.getType.toString}.class"

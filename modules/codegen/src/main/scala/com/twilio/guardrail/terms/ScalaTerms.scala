@@ -21,7 +21,9 @@ class ScalaTerms[L <: LA, F[_]](implicit I: InjectK[ScalaTerm[L, ?], F]) {
   def emptyOptionalTerm(): Free[F, L#Term]             = Free.inject[ScalaTerm[L, ?], F](EmptyOptionalTerm())
   def liftVectorType(value: L#Type): Free[F, L#Type]   = Free.inject[ScalaTerm[L, ?], F](LiftVectorType(value))
   def liftVectorTerm(value: L#Term): Free[F, L#Term]   = Free.inject[ScalaTerm[L, ?], F](LiftVectorTerm(value))
+  def emptyVectorTerm(): Free[F, L#Term]               = Free.inject[ScalaTerm[L, ?], F](EmptyVectorTerm())
   def liftMapType(value: L#Type): Free[F, L#Type]      = Free.inject[ScalaTerm[L, ?], F](LiftMapType(value))
+  def emptyMapTerm(): Free[F, L#Term]                  = Free.inject[ScalaTerm[L, ?], F](EmptyMapTerm())
 
   def lookupEnumDefaultValue(tpe: L#TypeName, defaultValue: L#Term, values: List[(String, L#TermName, L#TermSelect)]): Free[F, L#TermSelect] =
     Free.inject[ScalaTerm[L, ?], F](LookupEnumDefaultValue(tpe, defaultValue, values))

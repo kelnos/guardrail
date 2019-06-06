@@ -38,7 +38,9 @@ object ScalaGenerator {
       case EmptyOptionalTerm()     => Target.pure(q"None")
       case LiftVectorType(value)   => Target.pure(t"IndexedSeq[${value}]")
       case LiftVectorTerm(value)   => Target.pure(q"IndexedSeq(${value})")
+      case EmptyVectorTerm()       => Target.pure(q"IndexedSeq.empty")
       case LiftMapType(value)      => Target.pure(t"Map[String, ${value}]")
+      case EmptyMapTerm()          => Target.pure(q"Map.empty")
       case LookupEnumDefaultValue(tpe, defaultValue, values) => {
         // FIXME: Is there a better way to do this? There's a gap of coverage here
         defaultValue match {

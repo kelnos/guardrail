@@ -20,7 +20,9 @@ case class LiftOptionalTerm[L <: LA](value: L#Term) extends ScalaTerm[L, L#Term]
 case class EmptyOptionalTerm[L <: LA]()             extends ScalaTerm[L, L#Term]
 case class LiftVectorType[L <: LA](value: L#Type)   extends ScalaTerm[L, L#Type]
 case class LiftVectorTerm[L <: LA](value: L#Term)   extends ScalaTerm[L, L#Term]
+case class EmptyVectorTerm[L <: LA]()               extends ScalaTerm[L, L#Term]
 case class LiftMapType[L <: LA](value: L#Type)      extends ScalaTerm[L, L#Type]
+case class EmptyMapTerm[L <: LA]()                  extends ScalaTerm[L, L#Term]
 
 case class LookupEnumDefaultValue[L <: LA](tpe: L#TypeName, defaultValue: L#Term, values: List[(String, L#TermName, L#TermSelect)])
     extends ScalaTerm[L, L#TermSelect]
