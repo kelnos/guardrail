@@ -28,10 +28,10 @@ import scala.util.Try
 object JavaGenerator {
   def buildPkgDecl(parts: List[String]): Target[PackageDeclaration] = safeParseName(parts.mkString(".")).map(new PackageDeclaration(_))
 
-  def buildMethodCall(name: String, arg: Option[Node] = None): Target[Node] = arg match {
-    case Some(expr: Expression) => Target.pure(new MethodCallExpr(name, expr))
-    case None                   => Target.pure(new MethodCallExpr(name))
-    case other                  => Target.raiseError(s"Need expression to call '${name}' but got a ${other.getClass.getName} instead")
+  def buildMethodCall(scope: String, name: String, arg: Option[Node] = None): Target[Node] = arg match {
+    case Some(expr: Expression) => Target.pure(new MethodCallExpr(new NameExpr(scope), name, new NodeList[Expression](expr)))
+    case None                   => Target.pure(new MethodCallExpr(new NameExpr(scope), name))
+    case other                  => Target.raiseError(s"Need expression to call '${scope}.${name}' but got a ${other.getClass.getName} instead")
   }
 
   private val formatter = ToolFactory.createCodeFormatter(
@@ -105,10 +105,10 @@ object JavaGenerator {
       case LitLong(value)          => Target.pure(new LongLiteralExpr(value))
       case LitBoolean(value)       => Target.pure(new BooleanLiteralExpr(value))
       case LiftOptionalType(value) => safeParseClassOrInterfaceType(s"java.util.Optional").map(_.setTypeArguments(new NodeList(value)))
-      case LiftOptionalTerm(value) => buildMethodCall("java.util.Optional.ofNullable", Some(value))
-      case EmptyOptionalTerm()     => buildMethodCall("java.util.Optional.empty")
+      case LiftOptionalTerm(value) => buildMethodCall("java.util.Optional", "ofNullable", Some(value))
+      case EmptyOptionalTerm()     => buildMethodCall("java.util.Optional", "empty")
       case LiftVectorType(value)   => safeParseClassOrInterfaceType("java.util.List").map(_.setTypeArguments(new NodeList(value)))
-      case LiftVectorTerm(value)   => buildMethodCall("java.util.Collections.singletonList", Some(value))
+      case LiftVectorTerm(value)   => buildMethodCall("java.util.Collections", "singletonList", Some(value))
       case EmptyVectorTerm()       => Target.pure(new ObjectCreationExpr(null, ARRAY_LIST_TYPE_DIAMONDED, new NodeList[Expression]))
       case LiftMapType(value)      => safeParseClassOrInterfaceType("java.util.Map").map(_.setTypeArguments(STRING_TYPE, value))
       case EmptyMapTerm()          => Target.pure(new ObjectCreationExpr(null, HASH_MAP_TYPE_DIAMONDED, new NodeList[Expression]))

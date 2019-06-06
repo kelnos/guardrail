@@ -21,6 +21,7 @@ import com.github.javaparser.ast.Modifier.{ ABSTRACT, FINAL, PRIVATE, PROTECTED,
 import com.github.javaparser.ast.body._
 import com.github.javaparser.ast.expr._
 import java.util
+import scala.compat.java8.OptionConverters._
 import scala.language.existentials
 import scala.util.Try
 
@@ -493,16 +494,7 @@ object JacksonGenerator {
       })
       withoutDiscriminators(parentOptionalTerms ++ optionalTerms).foreach({
         case ParameterTerm(_, parameterName, fieldType, _, defaultValue, _) =>
-          val initializer = defaultValue.fold[Expression](
-            new MethodCallExpr(new NameExpr("Optional"), "empty")
-          )(
-            dv =>
-              if (fieldType.isOptional) {
-                optionalOfExpr(dv)
-              } else {
-                dv
-            }
-          )
+          val initializer = defaultValue.getOrElse[Expression](new MethodCallExpr(new NameExpr("java.util.Optional"), "empty"))
           builderClass.addFieldWithInitializer(fieldType, parameterName, initializer, PRIVATE)
       })
 
@@ -672,87 +664,6 @@ object JacksonGenerator {
             Target.raiseError(s"Attempted to extractProperties for a ${comp.getClass()}, unsure what to do here")
           case _ => Target.pure(None)
         }).map(_.map(_.asScala.toList).toList.flatten)
-
-      case TransformProperty(clsName, name, property, meta, concreteTypes, isRequired) =>
-        Target.log.function("transformProperty") {
-          for {
-            defaultValue <- property match {
-              case _: MapSchema =>
-                Target.pure(Option(new ObjectCreationExpr(null, HASH_MAP_TYPE_DIAMONDED, new NodeList())).map(x => x: Expression))
-              case _: ArraySchema =>
-                Target.pure(Option(new ObjectCreationExpr(null, ARRAY_LIST_TYPE_DIAMONDED, new NodeList())).map(x => x: Expression))
-              case p: BooleanSchema =>
-                Default(p).extract[Boolean].traverse(x => Target.pure(new BooleanLiteralExpr(x)))
-              case p: NumberSchema if p.getFormat == "double" =>
-                Default(p).extract[Double].traverse(x => Target.pure(new DoubleLiteralExpr(x)))
-              case p: NumberSchema if p.getFormat == "float" =>
-                Default(p).extract[Float].traverse(x => Target.pure(new DoubleLiteralExpr(x)))
-              case p: IntegerSchema if p.getFormat == "int32" =>
-                Default(p).extract[Int].traverse(x => Target.pure(new IntegerLiteralExpr(x)))
-              case p: IntegerSchema if p.getFormat == "int64" =>
-                Default(p).extract[Long].traverse(x => Target.pure(new LongLiteralExpr(x)))
-              case p: StringSchema =>
-                Default(p)
-                  .extract[String]
-                  .traverse(x => Target.fromOption(Try(new StringLiteralExpr(x)).toOption, s"Default string literal for '${p.getTitle}' is null"))
-              case _ =>
-                Target.pure(None)
-            }
-
-            readOnlyKey = Option(name).filter(_ => Option(property.getReadOnly).contains(true))
-            emptyToNull = (property match {
-              case d: DateSchema      => EmptyValueIsNull(d)
-              case dt: DateTimeSchema => EmptyValueIsNull(dt)
-              case s: StringSchema    => EmptyValueIsNull(s)
-              case _                  => None
-            }).getOrElse(EmptyIsEmpty)
-            dataRedaction = DataRedaction(property).getOrElse(DataVisible)
-
-            tpeClassDep <- meta match {
-              case SwaggerUtil.Resolved(declType, classDep, _) =>
-                Target.pure((declType, classDep))
-              case SwaggerUtil.Deferred(tpeName) =>
-                val tpe = concreteTypes.find(_.clsName == tpeName).map(x => Target.pure(x.tpe)).getOrElse {
-                  println(s"Unable to find definition for ${tpeName}, just inlining")
-                  safeParseType(tpeName)
-                }
-                tpe.map((_, Option.empty))
-              case SwaggerUtil.DeferredArray(tpeName) =>
-                for {
-                  fqListType <- safeParseClassOrInterfaceType("java.util.List")
-                  concreteType = lookupTypeName(tpeName, concreteTypes)(Target.pure)
-                  innerType <- concreteType.getOrElse(safeParseType(tpeName))
-                } yield (fqListType.setTypeArguments(innerType), Option.empty)
-              case SwaggerUtil.DeferredMap(tpeName) =>
-                for {
-                  fqMapType <- safeParseClassOrInterfaceType("java.util.Map")
-                  concreteType = lookupTypeName(tpeName, concreteTypes)(Target.pure)
-                  innerType <- concreteType.getOrElse(safeParseType(tpeName))
-                } yield (fqMapType.setTypeArguments(STRING_TYPE, innerType), Option.empty)
-            }
-            (tpe, classDep) = tpeClassDep
-
-            argName = name.toCamelCase
-            _declDefaultPair <- Option(isRequired)
-              .filterNot(_ == false)
-              .fold[Target[(Type, Option[Expression])]](
-                (
-                  safeParseType(s"Optional<${tpe}>"),
-                  Target.pure(
-                    Option(
-                      defaultValue
-                        .fold(
-                          new MethodCallExpr(new NameExpr(s"Optional"), "empty"): Expression
-                        )(t => optionalOfExpr(t))
-                    )
-                  )
-                ).mapN((_, _))
-              )(Function.const(Target.pure((tpe, defaultValue))) _)
-            (finalDeclType, finalDefaultValue) = _declDefaultPair
-            term <- safeParseParameter(s"final ${finalDeclType} ${argName.escapeIdentifier}")
-            dep = classDep.filterNot(_.value == clsName) // Filter out our own class name
-          } yield ProtocolParameter[JavaLanguage](term, name, dep, readOnlyKey, emptyToNull, dataRedaction, defaultValue)
-        }
 
       case RenderDTOClass(clsName, selfParams, parents) =>
         renderDTOClass(clsName, selfParams, parents)

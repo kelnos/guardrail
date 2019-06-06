@@ -5,11 +5,11 @@ import _root_.io.swagger.v3.oas.models.media._
 import cats.free.Free
 import cats.implicits._
 import com.twilio.guardrail.extract.VendorExtension.VendorExtensible._
+import com.twilio.guardrail.extract.{ DataRedaction, Default, EmptyValueIsNull }
 import com.twilio.guardrail.languages.LA
 import com.twilio.guardrail.protocol.terms.protocol._
 import com.twilio.guardrail.terms.framework.FrameworkTerms
 import com.twilio.guardrail.terms.{ ScalaTerms, SwaggerTerms }
-import java.util.Locale
 import scala.collection.JavaConverters._
 import scala.language.higherKinds
 
@@ -90,6 +90,108 @@ object ProtocolGenerator {
     work(List(root), Nil)
   }
 
+  private[this] def transformProperty[L <: LA, F[_]](
+      clsName: String,
+      name: String,
+      property: Schema[_],
+      required: Boolean,
+      meta: SwaggerUtil.ResolvedType[L],
+      concreteTypes: List[PropMeta[L]]
+  )(implicit Fw: FrameworkTerms[L, F], Sw: SwaggerTerms[L, F], Sc: ScalaTerms[L, F]): Free[F, ProtocolParameter[L]] = {
+    import Fw._
+    import Sc._
+
+    def wrapDefault(op: Option[Free[F, L#Term]]): Free[F, Option[L#Term]] =
+      op.fold(Free.pure[F, Option[L#Term]](Option.empty))(_.map(Option.apply))
+
+    def orObjectTypeFallback(tpe: Option[L#Type], tpeName: String): Free[F, L#Type] =
+      tpe.fold({
+        Sw.log.warning(s"Unable to parse type $tpeName, falling back to the object type") >>
+          objectType(None)
+      })(Free.pure[F, L#Type])
+
+    Sw.log.function("constructProtocolParameter") {
+      for {
+        argName     <- formatVariableName(name)
+        argTermName <- pureTermName(argName)
+
+        readOnlyKey = Option(name).filter(_ => Option(property.getReadOnly).contains(true))
+        emptyToNull = (property match {
+          case d: DateSchema      => EmptyValueIsNull(d)
+          case dt: DateTimeSchema => EmptyValueIsNull(dt)
+          case s: StringSchema    => EmptyValueIsNull(s)
+          case _                  => None
+        }).getOrElse(EmptyIsEmpty)
+        dataRedaction = DataRedaction(property).getOrElse(DataVisible)
+
+        tpeClassDep <- meta match {
+          case SwaggerUtil.Resolved(declType, classDep, _) =>
+            Free.pure[F, (L#Type, Option[L#TermName])]((declType, classDep))
+
+          case SwaggerUtil.Deferred(tpeName) =>
+            val tpe = concreteTypes
+              .find(_.clsName == tpeName)
+              .fold({
+                Sw.log.warning(s"Unable to find definition for ${tpeName}, just inlining") >>
+                  (for {
+                    parsed  <- parseType(tpeName)
+                    checked <- orObjectTypeFallback(parsed, tpeName)
+                  } yield checked)
+              })(x => Free.pure[F, L#Type](x.tpe))
+            tpe.map((_, Option.empty[L#TermName]))
+
+          case SwaggerUtil.DeferredArray(tpeName) =>
+            for {
+              innerType <- parseType(tpeName).flatMap(orObjectTypeFallback(_, tpeName))
+              tpe       <- liftVectorType(innerType)
+            } yield (tpe, Option.empty)
+
+          case SwaggerUtil.DeferredMap(tpeName) =>
+            for {
+              innerType <- parseType(tpeName).flatMap(orObjectTypeFallback(_, tpeName))
+              tpe       <- liftMapType(innerType)
+            } yield (tpe, Option.empty)
+        }
+        (tpe, classDep) = tpeClassDep
+
+        defaultValue <- property match {
+          case _: MapSchema =>
+            emptyMapTerm().map(Option.apply)
+          case _: ArraySchema =>
+            emptyVectorTerm().map(Option.apply)
+          case p: BooleanSchema =>
+            wrapDefault(Default(p).extract[Boolean].map(litBoolean))
+          case p: NumberSchema if p.getFormat == "double" =>
+            wrapDefault(Default(p).extract[Double].map(litDouble))
+          case p: NumberSchema if p.getFormat == "float" =>
+            wrapDefault(Default(p).extract[Float].map(litFloat))
+          case p: IntegerSchema if p.getFormat == "int32" =>
+            wrapDefault(Default(p).extract[Int].map(litInt))
+          case p: IntegerSchema if p.getFormat == "int64" =>
+            wrapDefault(Default(p).extract[Long].map(litLong))
+          case p: StringSchema =>
+            wrapDefault(Default(p).extract[String].map(litString))
+          case _ =>
+            Free.pure[F, Option[L#Term]](Option.empty)
+        }
+
+        declDefaultPair <- Option(required)
+          .filterNot(_ == false)
+          .fold[Free[F, (L#Type, Option[L#Term])]](
+            for {
+              optTpe <- liftOptionalType(tpe)
+              defVal <- defaultValue.fold(emptyOptionalTerm())(liftOptionalTerm)
+            } yield (optTpe, Option(defVal))
+          )(_ => Free.pure[F, (L#Type, Option[L#Term])]((tpe, defaultValue)))
+        (finalDeclType, finalDefaultValue) = declDefaultPair
+
+        term <- pureMethodParameter(argTermName, finalDeclType, finalDefaultValue)
+
+        dep = classDep.filterNot(_.value == clsName) // Filter out our own class name
+      } yield ProtocolParameter[L](term, name, dep, readOnlyKey, emptyToNull, dataRedaction, finalDefaultValue)
+    }
+  }
+
   private[this] def fromEnum[L <: LA, F[_]](
       clsName: String,
       swagger: Schema[_]
@@ -165,7 +267,7 @@ object ProtocolGenerator {
           val isRequired = requiredFields.contains(name)
           SwaggerUtil
             .propMeta[L, F](prop)
-            .flatMap(transformProperty(hierarchy.name, concreteTypes)(name, prop, _, isRequired))
+            .flatMap(transformProperty(hierarchy.name, name, prop, isRequired, _, concreteTypes))
       })
       definition  <- renderSealedTrait(hierarchy.name, params, discriminator, parents, children)
       encoder     <- encodeADT(hierarchy.name, hierarchy.discriminator, children)
@@ -215,7 +317,7 @@ object ProtocolGenerator {
                 val isRequired = requiredFields.contains(name)
                 SwaggerUtil
                   .propMeta[L, F](prop)
-                  .flatMap(transformProperty(clsName, concreteTypes)(name, prop, _, isRequired))
+                  .flatMap(transformProperty(clsName, name, prop, isRequired, _, concreteTypes))
             })
             interfacesCls = interfaces.flatMap(i => Option(i.get$ref).map(_.split("/").last))
             tpe <- parseTypeName(clsName)
@@ -256,7 +358,7 @@ object ProtocolGenerator {
       params <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
-          SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, concreteTypes)(name, prop, _, isRequired))
+          SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, name, prop, isRequired, _, concreteTypes))
       })
       defn <- renderDTOClass(clsName, params, parents)
       deps = params.flatMap(_.dep)
