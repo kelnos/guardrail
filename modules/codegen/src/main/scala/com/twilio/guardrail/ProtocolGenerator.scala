@@ -135,7 +135,7 @@ object ProtocolGenerator {
       presence: ParameterPresence,
       meta: SwaggerUtil.ResolvedType[L],
       concreteTypes: List[PropMeta[L]]
-  )(implicit Fw: FrameworkTerms[L, F], Sw: SwaggerTerms[L, F], Sc: ScalaTerms[L, F]): Free[F, ProtocolParameter[L]] = {
+  )(implicit Fw: FrameworkTerms[L, F], Sw: SwaggerTerms[L, F], Sc: ScalaTerms[L, F]): Free[F, (String, ProtocolParameter[L])] = {
     import Fw._
     import Sc._
 
@@ -227,8 +227,37 @@ object ProtocolGenerator {
         term <- pureMethodParameter(argTermName, finalDeclType, finalDefaultValue)
 
         dep = classDep.filterNot(_.value == clsName) // Filter out our own class name
-      } yield ProtocolParameter[L](term, name, dep, presence, readOnlyKey, emptyToNull, dataRedaction, finalDefaultValue)
+      } yield (argName, ProtocolParameter[L](term, name, dep, presence, readOnlyKey, emptyToNull, dataRedaction, finalDefaultValue))
     }
+  }
+
+  private[this] def dedupeParams[L <: LA, F[_]](
+      params: List[(String, ProtocolParameter[L])]
+  )(implicit Sc: ScalaTerms[L, F]): Free[F, List[ProtocolParameter[L]]] = {
+    import Sc._
+
+    val counts = params.groupBy(_._1).mapValues(_.length)
+    params.traverse({
+      case (argName, param) =>
+        if (counts.getOrElse(argName, 0) > 1) {
+          for {
+            escapedName <- pureTermName(param.name)
+            newTerm     <- alterMethodParameterName(param.term, escapedName)
+          } yield
+            ProtocolParameter[L](
+              newTerm,
+              param.name,
+              param.dep,
+              param.presence,
+              param.readOnlyKey,
+              param.emptyToNull,
+              param.dataRedaction,
+              param.defaultValue
+            )
+        } else {
+          Free.pure[F, ProtocolParameter[L]](param)
+        }
+    })
   }
 
   private[this] def fromEnum[L <: LA, F[_]](
@@ -302,7 +331,7 @@ object ProtocolGenerator {
       }
       props <- extractProperties(hierarchy.model)
       requiredFields = hierarchy.required ::: hierarchy.children.flatMap(_.required)
-      params <- props.traverse({
+      normalizedParams <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
           val presence   = ParameterPresence(prop, isRequired, compatMode)
@@ -310,6 +339,7 @@ object ProtocolGenerator {
             .propMeta[L, F](prop)
             .flatMap(transformProperty(hierarchy.name, name, prop, presence, _, concreteTypes))
       })
+      params      <- dedupeParams(normalizedParams)
       definition  <- renderSealedTrait(hierarchy.name, params, discriminator, parents, children)
       encoder     <- encodeADT(hierarchy.name, hierarchy.discriminator, children)
       decoder     <- decodeADT(hierarchy.name, hierarchy.discriminator, children)
@@ -358,7 +388,7 @@ object ProtocolGenerator {
             requiredFields = getRequiredFieldsRec(_extends) ++ concreteInterfaces.flatMap(getRequiredFieldsRec)
             _withProps <- concreteInterfaces.traverse(extractProperties)
             props = _extendsProps ++ _withProps.flatten
-            params <- props.traverse({
+            normalizedParams <- props.traverse({
               case (name, prop) =>
                 val isRequired = requiredFields.contains(name)
                 val presence   = ParameterPresence(prop, isRequired, compatMode)
@@ -366,6 +396,7 @@ object ProtocolGenerator {
                   .propMeta[L, F](prop)
                   .flatMap(transformProperty(clsName, name, prop, presence, _, concreteTypes))
             })
+            params <- dedupeParams(normalizedParams)
             interfacesCls = interfaces.flatMap(i => Option(i.get$ref).map(_.split("/").last))
             tpe <- parseTypeName(clsName)
 
@@ -406,13 +437,14 @@ object ProtocolGenerator {
     for {
       props <- extractProperties(model)
       requiredFields = getRequiredFieldsRec(model)
-      params <- props.traverse({
+      normalizedParams <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
           val presence   = ParameterPresence(prop, isRequired, compatMode)
           SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, name, prop, presence, _, concreteTypes))
       })
-      defn <- renderDTOClass(clsName, params, parents)
+      params <- dedupeParams(normalizedParams)
+      defn   <- renderDTOClass(clsName, params, parents)
       deps = params.flatMap(_.dep)
       encoder     <- encodeModel(clsName, params, parents)
       decoder     <- decodeModel(clsName, params, parents)
