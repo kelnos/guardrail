@@ -45,7 +45,7 @@ object JacksonGenerator {
 
     params
       .map({
-        case ProtocolParameter(term, name, _, _, _, dataRedaction, selfDefaultValue) =>
+        case ProtocolParameter(term, name, _, _, _, _, dataRedaction, selfDefaultValue) =>
           val parameterType = if (term.getType.isOptional) {
             term.getType.containedType.unbox
           } else {

@@ -25,9 +25,47 @@ sealed trait RedactionBehaviour
 case object DataVisible  extends RedactionBehaviour
 case object DataRedacted extends RedactionBehaviour
 
+sealed trait ParameterPresence
+object ParameterPresence {
+  case object Optional         extends ParameterPresence
+  case object OptionalNullable extends ParameterPresence
+  case object Required         extends ParameterPresence
+  case object RequiredNullable extends ParameterPresence
+
+  sealed trait CompatMode
+  case object SwaggerV2Compat extends CompatMode
+  case object NoCompat        extends CompatMode
+
+  def apply(prop: Schema[_], isRequired: Boolean, compatMode: CompatMode): ParameterPresence = {
+    val (finalIsRequired, isNullable) = Option(prop.getNullable).fold({
+      // Swagger v2 does not have `nullable`, but `x-nullable` is recognized as the de-facto
+      // extension for v2 that has the same meaning in v3.  The OpenAPI v2-to-v3 converter
+      // will set `nullable` based on `x-nullable` in a v2 spec.  If it's not present at all,
+      // we're going to maintain the old Guardrail behavior for v2 specs:
+      //    required - > (required: true, nullable: false)
+      //    !required -> (required: true, nullable: true)
+      // This will maintain backwards-compat for people relying on our existing v2 behavior,
+      // but will a) 'upgrade' them to the correct behavior if they use `x-nullable`, and b)
+      // makes Guardrail behave according to spec if it's a v3 spec.
+      compatMode match {
+        case SwaggerV2Compat if !isRequired => (true, true)
+        case NoCompat                       => (isRequired, false)
+      }
+    })((isRequired, _))
+
+    (finalIsRequired, isNullable) match {
+      case (false, false) => Optional
+      case (false, true)  => OptionalNullable
+      case (true, false)  => Required
+      case (true, true)   => RequiredNullable
+    }
+  }
+}
+
 case class ProtocolParameter[L <: LA](term: L#MethodParameter,
                                       name: String,
                                       dep: Option[L#TermName],
+                                      presence: ParameterPresence,
                                       readOnlyKey: Option[String],
                                       emptyToNull: EmptyToNullBehaviour,
                                       dataRedaction: RedactionBehaviour,
@@ -94,7 +132,7 @@ object ProtocolGenerator {
       clsName: String,
       name: String,
       property: Schema[_],
-      required: Boolean,
+      presence: ParameterPresence,
       meta: SwaggerUtil.ResolvedType[L],
       concreteTypes: List[PropMeta[L]]
   )(implicit Fw: FrameworkTerms[L, F], Sw: SwaggerTerms[L, F], Sc: ScalaTerms[L, F]): Free[F, ProtocolParameter[L]] = {
@@ -175,20 +213,21 @@ object ProtocolGenerator {
             Free.pure[F, Option[L#Term]](Option.empty)
         }
 
-        declDefaultPair <- Option(required)
-          .filterNot(_ == false)
-          .fold[Free[F, (L#Type, Option[L#Term])]](
+        declDefaultPair <- presence match {
+          case ParameterPresence.Optional | ParameterPresence.OptionalNullable | ParameterPresence.RequiredNullable =>
             for {
               optTpe <- liftOptionalType(tpe)
               defVal <- defaultValue.fold(emptyOptionalTerm())(liftOptionalTerm)
             } yield (optTpe, Option(defVal))
-          )(_ => Free.pure[F, (L#Type, Option[L#Term])]((tpe, defaultValue)))
+          case ParameterPresence.Required =>
+            Free.pure[F, (L#Type, Option[L#Term])]((tpe, defaultValue))
+        }
         (finalDeclType, finalDefaultValue) = declDefaultPair
 
         term <- pureMethodParameter(argTermName, finalDeclType, finalDefaultValue)
 
         dep = classDep.filterNot(_.value == clsName) // Filter out our own class name
-      } yield ProtocolParameter[L](term, name, dep, readOnlyKey, emptyToNull, dataRedaction, finalDefaultValue)
+      } yield ProtocolParameter[L](term, name, dep, presence, readOnlyKey, emptyToNull, dataRedaction, finalDefaultValue)
     }
   }
 
@@ -236,7 +275,8 @@ object ProtocolGenerator {
   private[this] def fromPoly[L <: LA, F[_]](
       hierarchy: ClassParent[L],
       concreteTypes: List[PropMeta[L]],
-      definitions: List[(String, Schema[_])]
+      definitions: List[(String, Schema[_])],
+      compatMode: ParameterPresence.CompatMode
   )(implicit F: FrameworkTerms[L, F],
     P: PolyProtocolTerms[L, F],
     M: ModelProtocolTerms[L, F],
@@ -257,7 +297,7 @@ object ProtocolGenerator {
 
     for {
       parents <- hierarchy.model match {
-        case c: ComposedSchema => extractParents(c, definitions, concreteTypes)
+        case c: ComposedSchema => extractParents(c, definitions, concreteTypes, compatMode)
         case _                 => Free.pure[F, List[SuperClass[L]]](Nil)
       }
       props <- extractProperties(hierarchy.model)
@@ -265,9 +305,10 @@ object ProtocolGenerator {
       params <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
+          val presence   = ParameterPresence(prop, isRequired, compatMode)
           SwaggerUtil
             .propMeta[L, F](prop)
-            .flatMap(transformProperty(hierarchy.name, name, prop, isRequired, _, concreteTypes))
+            .flatMap(transformProperty(hierarchy.name, name, prop, presence, _, concreteTypes))
       })
       definition  <- renderSealedTrait(hierarchy.name, params, discriminator, parents, children)
       encoder     <- encodeADT(hierarchy.name, hierarchy.discriminator, children)
@@ -284,7 +325,12 @@ object ProtocolGenerator {
     }
   }
 
-  def extractParents[L <: LA, F[_]](elem: ComposedSchema, definitions: List[(String, Schema[_])], concreteTypes: List[PropMeta[L]])(
+  def extractParents[L <: LA, F[_]](
+      elem: ComposedSchema,
+      definitions: List[(String, Schema[_])],
+      concreteTypes: List[PropMeta[L]],
+      compatMode: ParameterPresence.CompatMode
+  )(
       implicit M: ModelProtocolTerms[L, F],
       F: FrameworkTerms[L, F],
       P: PolyProtocolTerms[L, F],
@@ -315,9 +361,10 @@ object ProtocolGenerator {
             params <- props.traverse({
               case (name, prop) =>
                 val isRequired = requiredFields.contains(name)
+                val presence   = ParameterPresence(prop, isRequired, compatMode)
                 SwaggerUtil
                   .propMeta[L, F](prop)
-                  .flatMap(transformProperty(clsName, name, prop, isRequired, _, concreteTypes))
+                  .flatMap(transformProperty(clsName, name, prop, presence, _, concreteTypes))
             })
             interfacesCls = interfaces.flatMap(i => Option(i.get$ref).map(_.split("/").last))
             tpe <- parseTypeName(clsName)
@@ -343,7 +390,11 @@ object ProtocolGenerator {
     } yield supper
   }
 
-  private[this] def fromModel[L <: LA, F[_]](clsName: String, model: Schema[_], parents: List[SuperClass[L]], concreteTypes: List[PropMeta[L]])(
+  private[this] def fromModel[L <: LA, F[_]](clsName: String,
+                                             model: Schema[_],
+                                             parents: List[SuperClass[L]],
+                                             concreteTypes: List[PropMeta[L]],
+                                             compatMode: ParameterPresence.CompatMode)(
       implicit M: ModelProtocolTerms[L, F],
       F: FrameworkTerms[L, F],
       Sc: ScalaTerms[L, F],
@@ -358,7 +409,8 @@ object ProtocolGenerator {
       params <- props.traverse({
         case (name, prop) =>
           val isRequired = requiredFields.contains(name)
-          SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, name, prop, isRequired, _, concreteTypes))
+          val presence   = ParameterPresence(prop, isRequired, compatMode)
+          SwaggerUtil.propMeta[L, F](prop).flatMap(transformProperty(clsName, name, prop, presence, _, concreteTypes))
       })
       defn <- renderDTOClass(clsName, params, parents)
       deps = params.flatMap(_.dep)
@@ -501,6 +553,12 @@ object ProtocolGenerator {
     import S._
     import Sw._
 
+    val compatMode = Option(swagger.getOpenapi)
+      .fold[ParameterPresence.CompatMode](ParameterPresence.SwaggerV2Compat)({
+        case x if x.trim.startsWith("2.") => ParameterPresence.SwaggerV2Compat
+        case _                            => ParameterPresence.NoCompat
+      })
+
     val definitions = Option(swagger.getComponents()).toList.flatMap(x => Option(x.getSchemas)).flatMap(_.asScala.toList)
 
     for {
@@ -508,21 +566,21 @@ object ProtocolGenerator {
       (hierarchies, definitionsWithoutPoly) = groupedHierarchies
 
       concreteTypes <- SwaggerUtil.extractConcreteTypes[L, F](definitions)
-      polyADTs      <- hierarchies.traverse(fromPoly(_, concreteTypes, definitions))
+      polyADTs      <- hierarchies.traverse(fromPoly(_, concreteTypes, definitions, compatMode))
       elems <- definitionsWithoutPoly.traverse {
         case (clsName, model) =>
           model match {
             case m: StringSchema =>
               for {
                 enum  <- fromEnum(clsName, m)
-                model <- fromModel(clsName, m, List.empty, concreteTypes)
+                model <- fromModel(clsName, m, List.empty, concreteTypes, compatMode)
                 alias <- modelTypeAlias(clsName, m)
               } yield enum.orElse(model).getOrElse(alias)
 
             case comp: ComposedSchema =>
               for {
-                parents <- extractParents(comp, definitions, concreteTypes)
-                model   <- fromModel(clsName, comp, parents, concreteTypes)
+                parents <- extractParents(comp, definitions, concreteTypes, compatMode)
+                model   <- fromModel(clsName, comp, parents, concreteTypes, compatMode)
                 alias   <- modelTypeAlias(clsName, comp)
               } yield model.getOrElse(alias)
 
@@ -532,7 +590,7 @@ object ProtocolGenerator {
             case m: ObjectSchema =>
               for {
                 enum  <- fromEnum(clsName, m)
-                model <- fromModel(clsName, m, List.empty, concreteTypes)
+                model <- fromModel(clsName, m, List.empty, concreteTypes, compatMode)
                 alias <- modelTypeAlias(clsName, m)
               } yield enum.orElse(model).getOrElse(alias)
 
