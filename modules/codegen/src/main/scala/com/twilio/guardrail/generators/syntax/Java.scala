@@ -212,12 +212,17 @@ object Java {
         s
       }
 
+    // This is unfortunately not lossless due to the need to replace dashes with underscores
     def escapeIdentifier: String = {
       val reservedEscaped = s.escapeReservedWord
-      if (reservedEscaped.nonEmpty && reservedEscaped.charAt(0) >= '0' && reservedEscaped.charAt(0) <= '9') "_" + reservedEscaped
-      else reservedEscaped
+      val leadingDigitEscaped =
+        if (reservedEscaped.nonEmpty && reservedEscaped.charAt(0) >= '0' && reservedEscaped.charAt(0) <= '9') "_" + reservedEscaped
+        else reservedEscaped
+      leadingDigitEscaped.replaceAll("-", "_")
     }
 
+    // This unfortunately won't always work because of the lossy escaping step above, but it
+    // should work in most circumstances
     def unescapeIdentifier: String = {
       val removedLeadingUnderscore =
         if (s.startsWith("_") && s.length >= 2 && s.charAt(1) >= '0' && s.charAt(1) <= '9') s.substring(1)
