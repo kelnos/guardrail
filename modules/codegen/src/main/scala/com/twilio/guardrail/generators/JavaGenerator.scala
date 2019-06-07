@@ -242,6 +242,7 @@ object JavaGenerator {
       case WriteProtocolDefinition(outputPath, pkgName, definitions, dtoComponents, imports, elem) =>
         for {
           pkgDecl      <- buildPkgDecl(definitions)
+          rootImport <- safeParseRawImport((pkgName :+ "*").mkString("."))
           showerImport <- safeParseRawImport((pkgName :+ "Shower").mkString("."))
 
           nameAndCompilationUnit = elem match {
@@ -261,6 +262,7 @@ object JavaGenerator {
               cu.setPackageDeclaration(pkgDecl)
               imports.foreach(cu.addImport)
               staticDefns.extraImports.foreach(cu.addImport)
+              cu.addImport(rootImport)
               val clsCopy = cls.clone()
               staticDefns.definitions.foreach(clsCopy.addMember)
               cu.addType(clsCopy)
@@ -271,6 +273,7 @@ object JavaGenerator {
               cu.setPackageDeclaration(pkgDecl)
               imports.foreach(cu.addImport)
               staticDefns.extraImports.foreach(cu.addImport)
+              cu.addImport(rootImport)
               val trtCopy = trt.clone()
               staticDefns.definitions.foreach(trtCopy.addMember)
               cu.addType(trtCopy)

@@ -214,11 +214,19 @@ object ProtocolGenerator {
         }
 
         declDefaultPair <- presence match {
-          case ParameterPresence.Optional | ParameterPresence.OptionalNullable | ParameterPresence.RequiredNullable =>
+          case ParameterPresence.OptionalNullable =>
+            for {
+              optTpe <- liftOptionalType(tpe)
+              optOptTpe <- liftOptionalType(optTpe)
+              defVal <- defaultValue.fold(emptyOptionalTerm())(liftOptionalTerm(_).flatMap(liftOptionalTerm))
+            } yield (optOptTpe, Option(defVal))
+
+          case ParameterPresence.Optional | ParameterPresence.RequiredNullable =>
             for {
               optTpe <- liftOptionalType(tpe)
               defVal <- defaultValue.fold(emptyOptionalTerm())(liftOptionalTerm)
             } yield (optTpe, Option(defVal))
+
           case ParameterPresence.Required =>
             Free.pure[F, (L#Type, Option[L#Term])]((tpe, defaultValue))
         }

@@ -1,0 +1,38 @@
+openapi: 3.0.2
+info:
+  version: 1.0.0
+paths:
+  /foo:
+    post:
+      x-jvm-package: propertyPresence
+      operationId: foo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Foo"
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Foo"
+components:
+  schemas:
+    Foo:
+      type: object
+      required:
+        - req
+        - reqNull
+      properties:
+        req:
+          type: string
+        reqNull:
+          type: string
+          nullable: true
+        opt:
+          type: string
+        optNull:
+          type: string
+          nullable: true

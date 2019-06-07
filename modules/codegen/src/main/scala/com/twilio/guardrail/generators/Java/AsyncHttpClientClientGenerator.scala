@@ -984,8 +984,8 @@ object AsyncHttpClientClientGenerator {
           exceptionClasses <- generateClientExceptionClasses()
           ahcSupport       <- generateAsyncHttpClientSupportClass()
           (ahcSupportImports, ahcSupportClass) = ahcSupport
-          jacksonSupport <- generateJacksonSupportClass()
-          (jacksonSupportImports, jacksonSupportClass) = jacksonSupport
+          jacksonSupport <- JacksonHelpers.jacksonSupportDef // generateJacksonSupportClass()
+          //(jacksonSupportImports, jacksonSupportClass) = jacksonSupport
           shower <- SerializationHelpers.showerSupportDef
         } yield {
           exceptionClasses.map({
@@ -993,7 +993,8 @@ object AsyncHttpClientClientGenerator {
               SupportDefinition[JavaLanguage](new Name(cls.getNameAsString), imports, cls)
           }) ++ List(
             SupportDefinition[JavaLanguage](new Name(ahcSupportClass.getNameAsString), ahcSupportImports, ahcSupportClass),
-            SupportDefinition[JavaLanguage](new Name(jacksonSupportClass.getNameAsString), jacksonSupportImports, jacksonSupportClass),
+            //SupportDefinition[JavaLanguage](new Name(jacksonSupportClass.getNameAsString), jacksonSupportImports, jacksonSupportClass),
+            jacksonSupport,
             shower
           )
         }

@@ -6,54 +6,67 @@ import _root_.io.swagger.v3.oas.models.media._
 import cats.data.NonEmptyList
 import cats.implicits._
 import cats.~>
-import com.github.javaparser.ast.`type`.{ PrimitiveType, Type, UnknownType }
-import com.twilio.guardrail.Discriminator
-import com.twilio.guardrail.extract.{ DataRedaction, Default, EmptyValueIsNull }
-import com.twilio.guardrail.generators.syntax.Java._
-import com.twilio.guardrail.generators.syntax.RichString
-import com.twilio.guardrail.languages.JavaLanguage
-import com.twilio.guardrail.protocol.terms.protocol._
-import scala.collection.JavaConverters._
 import com.github.javaparser.JavaParser
-import com.github.javaparser.ast.{ Node, NodeList }
-import com.github.javaparser.ast.stmt._
-import com.github.javaparser.ast.Modifier.{ ABSTRACT, FINAL, PRIVATE, PROTECTED, PUBLIC, STATIC }
+import com.github.javaparser.ast.Modifier._
+import com.github.javaparser.ast.`type`.{ ClassOrInterfaceType, PrimitiveType, Type, UnknownType }
 import com.github.javaparser.ast.body._
 import com.github.javaparser.ast.expr._
+import com.github.javaparser.ast.stmt._
+import com.github.javaparser.ast.{ Node, NodeList }
+import com.twilio.guardrail.Discriminator
+import com.twilio.guardrail.generators.syntax.Java._
+import com.twilio.guardrail.languages.JavaLanguage
+import com.twilio.guardrail.protocol.terms.protocol._
 import java.util
+import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
 import scala.language.existentials
-import scala.util.Try
 
 object JacksonGenerator {
   private val BUILDER_TYPE = JavaParser.parseClassOrInterfaceType("Builder")
+  private val PROPERTY_VALUE_TYPE = JavaParser.parseClassOrInterfaceType("JacksonSupport.PropertyValue")
+  private val PROPERTY_VALUE_TYPE_DIAMONDED = PROPERTY_VALUE_TYPE.clone().setTypeArguments(new NodeList[Type])
+
+  private def propertyValueType(of: Type): ClassOrInterfaceType = PROPERTY_VALUE_TYPE.clone().setTypeArguments(of)
 
   private case class ParameterTerm(propertyName: String,
                                    parameterName: String,
                                    fieldType: Type,
                                    parameterType: Type,
                                    defaultValue: Option[Expression],
+                                   presence: ParameterPresence,
                                    dataRedacted: RedactionBehaviour)
 
   // returns a tuple of (requiredTerms, optionalTerms)
   // note that required terms _that have a default value_ are conceptually optional.
   private def sortParams(params: List[ProtocolParameter[JavaLanguage]]): (List[ParameterTerm], List[ParameterTerm]) = {
-    def defaultValueToExpression(defaultValue: Option[Node]): Option[Expression] = defaultValue match {
+    def defaultValueToExpression(defaultValue: Option[Node], presence: ParameterPresence): Option[Expression] = defaultValue match {
+      case Some(mce: MethodCallExpr) if presence == ParameterPresence.OptionalNullable && mce.getScope.asScala.exists(_.toString == "java.util.Optional") =>
+        if (mce.getNameAsString == "empty") {
+          Some(new ObjectCreationExpr(null, PROPERTY_VALUE_TYPE_DIAMONDED, new NodeList))
+        } else {
+          Some(new ObjectCreationExpr(null, PROPERTY_VALUE_TYPE_DIAMONDED, new NodeList(mce)))
+        }
       case Some(expr: Expression) => Some(expr)
       case _                      => None
     }
 
     params
       .map({
-        case ProtocolParameter(term, name, _, _, _, _, dataRedaction, selfDefaultValue) =>
-          val parameterType = if (term.getType.isOptional) {
-            term.getType.containedType.unbox
-          } else {
-            term.getType.unbox
+        case ProtocolParameter(term, name, _, presence, _, _, dataRedaction, selfDefaultValue) =>
+          val fieldType = presence match {
+            case ParameterPresence.OptionalNullable =>
+              propertyValueType(if (term.getType.isOptional) term.getType.containedType else term.getType)
+            case _ =>
+              term.getType.unbox
           }
-          val defaultValue = defaultValueToExpression(selfDefaultValue)
+          val parameterType = presence match {
+            case ParameterPresence.Required => term.getType.unbox
+            case _ => term.getType.containedType.unbox
+          }
+          val defaultValue = defaultValueToExpression(selfDefaultValue, presence)
 
-          ParameterTerm(name, term.getNameAsString, term.getType.unbox, parameterType, defaultValue, dataRedaction)
+          ParameterTerm(name, term.getNameAsString, fieldType, parameterType, defaultValue, presence, dataRedaction)
       })
       .partition(
         pt => !pt.fieldType.isOptional && pt.defaultValue.isEmpty
@@ -322,9 +335,18 @@ object JacksonGenerator {
         terms.filterNot(term => discriminatorNames.contains(term.propertyName))
 
       terms.foreach({
-        case ParameterTerm(propertyName, parameterName, fieldType, _, _, _) =>
-          val field: FieldDeclaration = dtoClass.addField(fieldType, parameterName, PRIVATE, FINAL)
-          field.addSingleMemberAnnotation("JsonProperty", new StringLiteralExpr(propertyName))
+        case ParameterTerm(propertyName, parameterName, fieldType, _, _, presence, _) =>
+          dtoClass.addField(fieldType, parameterName, PRIVATE, FINAL)
+            .addSingleMemberAnnotation("JsonProperty", new StringLiteralExpr(propertyName))
+            .addSingleMemberAnnotation("JsonInclude", new FieldAccessExpr(
+              new FieldAccessExpr(new NameExpr("JsonInclude"), "Include"),
+              presence match {
+                case ParameterPresence.Required => "ALWAYS"
+                case ParameterPresence.RequiredNullable => "ALWAYS"
+                case ParameterPresence.Optional => "NON_ABSENT"
+                case ParameterPresence.OptionalNullable => "NON_ABSENT"
+              }
+            ))
       })
 
       val primaryConstructor = dtoClass.addConstructor(PROTECTED)
@@ -332,7 +354,7 @@ object JacksonGenerator {
       primaryConstructor.setParameters(
         new NodeList(
           withoutDiscriminators(parentTerms ++ terms).map({
-            case ParameterTerm(propertyName, parameterName, fieldType, _, _, _) =>
+            case ParameterTerm(propertyName, parameterName, fieldType, _, _, _, _) =>
               new Parameter(util.EnumSet.of(FINAL), fieldType, new SimpleName(parameterName))
                 .addAnnotation(new SingleMemberAnnotationExpr(new Name("JsonProperty"), new StringLiteralExpr(propertyName)))
           }): _*
@@ -489,12 +511,16 @@ object JacksonGenerator {
       val builderClass = new ClassOrInterfaceDeclaration(util.EnumSet.of(PUBLIC, STATIC), false, "Builder")
 
       withoutDiscriminators(parentRequiredTerms ++ requiredTerms).foreach({
-        case ParameterTerm(_, parameterName, fieldType, _, _, _) =>
+        case ParameterTerm(_, parameterName, fieldType, _, _, _, _) =>
           builderClass.addField(fieldType, parameterName, PRIVATE)
-      })
       withoutDiscriminators(parentOptionalTerms ++ optionalTerms).foreach({
-        case ParameterTerm(_, parameterName, fieldType, _, defaultValue, _) =>
-          val initializer = defaultValue.getOrElse[Expression](new MethodCallExpr(new NameExpr("java.util.Optional"), "empty"))
+        case ParameterTerm(_, parameterName, fieldType, _, defaultValue, presence, _) =>
+          val initializer = presence match {
+            case ParameterPresence.OptionalNullable =>
+              defaultValue.getOrElse[Expression](new ObjectCreationExpr(null, PROPERTY_VALUE_TYPE_DIAMONDED, new NodeList))
+            case _ =>
+              defaultValue.getOrElse[Expression](new MethodCallExpr(new NameExpr("java.util.Optional"), "empty"))
+          }
           builderClass.addFieldWithInitializer(fieldType, parameterName, initializer, PRIVATE)
       })
 
@@ -502,7 +528,7 @@ object JacksonGenerator {
       builderConstructor.setParameters(
         new NodeList(
           withoutDiscriminators(parentRequiredTerms ++ requiredTerms).map({
-            case ParameterTerm(_, parameterName, _, parameterType, _, _) =>
+            case ParameterTerm(_, parameterName, _, parameterType, _, _, _) =>
               new Parameter(util.EnumSet.of(FINAL), parameterType, new SimpleName(parameterName))
           }): _*
         )
@@ -511,7 +537,7 @@ object JacksonGenerator {
         new BlockStmt(
           new NodeList(
             withoutDiscriminators(parentRequiredTerms ++ requiredTerms).map({
-              case ParameterTerm(_, parameterName, fieldType, _, _, _) =>
+              case ParameterTerm(_, parameterName, fieldType, _, _, _, _) =>
                 new ExpressionStmt(
                   new AssignExpr(
                     new FieldAccessExpr(new ThisExpr, parameterName),
@@ -534,7 +560,7 @@ object JacksonGenerator {
           new BlockStmt(
             withoutDiscriminators(parentTerms ++ terms)
               .map({
-                case term @ ParameterTerm(_, parameterName, _, _, _, _) =>
+                case term @ ParameterTerm(_, parameterName, _, _, _, _, _) =>
                   new ExpressionStmt(
                     new AssignExpr(
                       new FieldAccessExpr(new ThisExpr, parameterName),
@@ -549,7 +575,7 @@ object JacksonGenerator {
 
       // TODO: leave out with${name}() if readOnlyKey?
       withoutDiscriminators(parentTerms ++ terms).foreach({
-        case ParameterTerm(_, parameterName, fieldType, parameterType, _, _) =>
+        case ParameterTerm(_, parameterName, fieldType, parameterType, _, _, _) =>
           val methodName = s"with${parameterName.unescapeIdentifier.capitalize}"
 
           builderClass
@@ -710,6 +736,7 @@ object JacksonGenerator {
         (List(
           "com.fasterxml.jackson.annotation.JsonCreator",
           "com.fasterxml.jackson.annotation.JsonIgnoreProperties",
+          "com.fasterxml.jackson.annotation.JsonInclude",
           "com.fasterxml.jackson.annotation.JsonProperty",
           "java.util.Optional"
         ).map(safeParseRawImport) ++ List(
