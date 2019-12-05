@@ -1,0 +1,25 @@
+openapi: 3.0.2
+info:
+  version: 1.0.0
+paths:
+  /foo:
+    get:
+      x-jvm-package: parameters
+      operationId: getFoo
+      parameters:
+        - $ref: "#/components/parameters/refParam"
+        - name: inlineParam
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        200: {}
+components:
+  parameters:
+    refParam:
+      name: refParam
+      in: query
+      required: true
+      schema:
+        type: string

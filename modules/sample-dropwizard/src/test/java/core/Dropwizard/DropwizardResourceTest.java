@@ -22,6 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +53,8 @@ public class DropwizardResourceTest {
 
     @Before
     public void setup() {
+        reset(userHandler);
+
         when(userHandler.getUserByName(anyString())).thenReturn(completedFuture(GetUserByNameResponse.NotFound));
         when(userHandler.getUserByName(eq(" "))).thenReturn(completedFuture(GetUserByNameResponse.BadRequest));
         when(userHandler.getUserByName(eq(USERNAME))).thenReturn(completedFuture(GetUserByNameResponse.Ok(USER)));
@@ -103,5 +107,20 @@ public class DropwizardResourceTest {
                 .queryParam("password", "")
                 .request()
                 .get(String.class);
+    }
+
+    @Test
+    public void testNullLoginUser() {
+        try {
+            resources
+                    .target("/v2/user/login")
+                    .queryParam("password", "")
+                    .request()
+                    .get(String.class);
+            throw new AssertionError("Shouldn't get here");
+        } catch (final BadRequestException e) {
+            // DW should reject the request before it gets to the handler
+            verify(userHandler, never()).loginUser(anyString(), anyString());
+        }
     }
 }
